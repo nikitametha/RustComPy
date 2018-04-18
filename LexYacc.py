@@ -2,6 +2,8 @@ import ply.lex as lex
 import ply.yacc as yacc
 import re
 from prettytable import PrettyTable
+# I use the Python AST
+from compiler import ast
 
 keywords = [ "break", "else", "char",  "return",  "const", "continue", "void",  "if", "static", "while"]
 local_names = {}
@@ -16,7 +18,7 @@ line_dict[0] = 0
 
 data = []
 
-with open("rust.rs") as file:
+with open("example.rs") as file:
 	data = file.readlines()
 backup = 0
 line = 1
@@ -53,7 +55,7 @@ def print_symbol_table():
 
 
 tokens = (
-    'MAIN', 'PRINT', 'NAME','NUMBER', 'PLUS','MINUS','TIMES','DIVIDE','EQUALS',
+    'MAIN', 'PRINT', 'NAME','NUMBER', 'PLUS','MINUS','MUL','DIV','EQUALS',
     'LPAREN','RPAREN', 'BLOCKSTART', 'BLOCKEND',
     'KEYWORD', 'FLOAT', 'TYPE', 'SEMCOL', 'LE', 'GE', 
     'LT', 'GT', 'EQ', 'NE', 'NEWLINE','ignore',
@@ -70,8 +72,8 @@ t_BITNOT  = r'\^'
 t_NOT     = r'\!'
 t_PLUS    = r'\+'
 t_MINUS   = r'-'
-t_TIMES   = r'\*'
-t_DIVIDE  = r'/'
+t_MUL   = r'\*'
+t_DIV  = r'\/'
 t_EQUALS  = r'='
 t_LPAREN  = r'[(]'
 t_RPAREN  = r'[)]'
@@ -215,7 +217,7 @@ lexer = lex.lex()
 
 precedence = (
 	('left','PLUS','MINUS'),
-	('left','TIMES','DIVIDE'),
+	('left','MUL','DIV'),
 	)
 
 def p_main_dec(p):
@@ -233,6 +235,7 @@ def p_if_statement(p):
 		error_list.append("invalid keyword : " + str(p[1]) + "at line : " + str(count))	
 	else:
 		print "Parsed a simple if"
+		
 
 def p_if_else_statement(p):
 	'statement : KEYWORD expression statement KEYWORD statement'
@@ -240,6 +243,7 @@ def p_if_else_statement(p):
 		error_list.append("invalid keyword : " + str(p[1]) + "at line : " + str(count))	
 	else:
 		print "parsed an if else"
+	 	
 
 def p_block_declaration(p):
 	'statement : BLOCKSTART statement BLOCKEND'
@@ -248,6 +252,54 @@ def p_block_declaration(p):
 def p_multiple_statement(p):
 	'statement : statement statement'
 	print("multiple statement called")
+
+
+def make_lt_compare((left, right)):
+    return ast.Compare(left, [('<', right), ])
+
+
+def make_gt_compare((left, right)):
+    return ast.Compare(left, [('>', right), ])
+
+def make_lte_compare((left, right)):
+    return ast.Compare(left, [('<=', right), ])
+
+
+def make_gte_compare((left, right)):
+    return ast.Compare(left, [('>=', right), ])
+
+
+def make_eq_compare((left, right)):
+    return ast.Compare(left, [('==', right), ])
+
+def make_neq_compare((left, right)):
+    return ast.Compare(left, [('!=', right), ])
+
+binary_ops = {
+    "+": ast.Add,
+    "-": ast.Sub,
+    "*": ast.Mul,
+    "/": ast.Div,
+    "<": make_lt_compare,
+    ">": make_gt_compare,
+	"<=": make_lte_compare,
+    ">=": make_gte_compare,
+    "==": make_eq_compare,
+    "!=": make_neq_compare,
+}
+unary_ops = {
+    "+": ast.UnaryAdd,
+    "-": ast.UnarySub,
+}
+precedence = (
+    ("left", "EQ", "GT", "LT"),
+    ("left", "PLUS", "MINUS"),
+    ("left", "MUL", "DIV"),
+)
+
+
+
+
 
 
 def p_statement_break_cont(p):
@@ -270,6 +322,7 @@ def p_statement_declaration_assign(p):
 	if(p[2] in symbol_table[temp]):
 		symbol_table[temp][p[2]]['value'] = p[4]
 		symbol_table[temp][p[2]]['type'] = type(p[4])
+		
 	else:
 		print("else called")
 		error_list.append("redefinition of type for variable : " + str(p[2]) + "at line : " + str(count))
@@ -312,22 +365,28 @@ def p_expression_relop(p):
 			   | expression EQ expression
 			   | expression NE expression
 	'''
+	'''
 	if p[2] == 'GT'  : p[0] = p[1] > p[3]
 	elif p[2] == 'GE': p[0] = p[1] >= p[3]
 	elif p[2] == 'EQ': p[0] = p[1] == p[3]
 	elif p[2] == 'LT': p[0] = p[1] < p[3]
 	elif p[2] == 'LE': p[0] = p[1] <= p[3]
 	elif p[2] == 'NE': p[0] = p[1] != p[3]
+	'''
+	p[0] = binary_ops[p[2]]((p[1], p[3]))
 
 def p_expression_binop(p):
 	'''expression : expression PLUS expression 
 				  | expression MINUS expression 
-				  | expression TIMES expression 
-				  | expression DIVIDE expression'''
+				  | expression MUL expression 
+				  | expression DIV expression'''
+	'''
 	if p[2] == '+'  : p[0] = p[1] + p[3]
 	elif p[2] == '-': p[0] = p[1] - p[3]
 	elif p[2] == '*': p[0] = p[1] * p[3]
 	elif p[2] == '/': p[0] = p[1] / p[3]
+	'''
+	p[0] = binary_ops[p[2]]((p[1], p[3]))
 
 def p_expression_binop_assign(p):
 	'expression : binop_exp'
@@ -374,6 +433,7 @@ def p_expression_logop(p):
 def p_expression_uminus(p):
 	'expression : MINUS expression'
 	p[0] = -p[2]
+	p[0] = unary_ops[p[1]](p[2])
 
 def p_expression_group(p):
 	'expression : LPAREN expression RPAREN'
@@ -405,10 +465,16 @@ import ply.yacc as yacc
 yacc.yacc()
 
 new_data = "" 
-with open("rust.rs") as file:
+with open("example.rs") as file:
 	new_data = file.read()
 i = 0
 s = new_data
 yacc.parse(s)
 print "\n"
 print_symbol_table()
+
+
+ast.parse()
+
+
+
