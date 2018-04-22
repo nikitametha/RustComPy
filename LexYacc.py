@@ -2,8 +2,11 @@ import ply.lex as lex
 import ply.yacc as yacc
 import re
 from prettytable import PrettyTable
-# I use the Python AST
-from compiler import ast
+
+temp_no = 0
+var_list=[]
+temp_dict=dict()
+var_dict = dict()
 
 keywords = [ "break", "else", "char",  "return",  "const", "continue", "void",  "if", "static", "while"]
 local_names = {}
@@ -18,7 +21,7 @@ line_dict[0] = 0
 
 data = []
 
-with open("example.rs") as file:
+with open("rust.rs") as file:
 	data = file.readlines()
 backup = 0
 line = 1
@@ -55,7 +58,7 @@ def print_symbol_table():
 
 
 tokens = (
-    'MAIN', 'PRINT', 'NAME','NUMBER', 'PLUS','MINUS','MUL','DIV','EQUALS',
+    'MAIN', 'PRINT', 'NAME','NUMBER', 'PLUS','MINUS','TIMES','DIVIDE','EQUALS',
     'LPAREN','RPAREN', 'BLOCKSTART', 'BLOCKEND',
     'KEYWORD', 'FLOAT', 'TYPE', 'SEMCOL', 'LE', 'GE', 
     'LT', 'GT', 'EQ', 'NE', 'NEWLINE','ignore',
@@ -72,8 +75,8 @@ t_BITNOT  = r'\^'
 t_NOT     = r'\!'
 t_PLUS    = r'\+'
 t_MINUS   = r'-'
-t_MUL   = r'\*'
-t_DIV  = r'\/'
+t_TIMES   = r'\*'
+t_DIVIDE  = r'/'
 t_EQUALS  = r'='
 t_LPAREN  = r'[(]'
 t_RPAREN  = r'[)]'
@@ -217,7 +220,7 @@ lexer = lex.lex()
 
 precedence = (
 	('left','PLUS','MINUS'),
-	('left','MUL','DIV'),
+	('left','TIMES','DIVIDE'),
 	)
 
 def p_main_dec(p):
@@ -235,7 +238,6 @@ def p_if_statement(p):
 		error_list.append("invalid keyword : " + str(p[1]) + "at line : " + str(count))	
 	else:
 		print "Parsed a simple if"
-		
 
 def p_if_else_statement(p):
 	'statement : KEYWORD expression statement KEYWORD statement'
@@ -243,7 +245,6 @@ def p_if_else_statement(p):
 		error_list.append("invalid keyword : " + str(p[1]) + "at line : " + str(count))	
 	else:
 		print "parsed an if else"
-	 	
 
 def p_block_declaration(p):
 	'statement : BLOCKSTART statement BLOCKEND'
@@ -252,54 +253,6 @@ def p_block_declaration(p):
 def p_multiple_statement(p):
 	'statement : statement statement'
 	print("multiple statement called")
-
-
-def make_lt_compare((left, right)):
-    return ast.Compare(left, [('<', right), ])
-
-
-def make_gt_compare((left, right)):
-    return ast.Compare(left, [('>', right), ])
-
-def make_lte_compare((left, right)):
-    return ast.Compare(left, [('<=', right), ])
-
-
-def make_gte_compare((left, right)):
-    return ast.Compare(left, [('>=', right), ])
-
-
-def make_eq_compare((left, right)):
-    return ast.Compare(left, [('==', right), ])
-
-def make_neq_compare((left, right)):
-    return ast.Compare(left, [('!=', right), ])
-
-binary_ops = {
-    "+": ast.Add,
-    "-": ast.Sub,
-    "*": ast.Mul,
-    "/": ast.Div,
-    "<": make_lt_compare,
-    ">": make_gt_compare,
-	"<=": make_lte_compare,
-    ">=": make_gte_compare,
-    "==": make_eq_compare,
-    "!=": make_neq_compare,
-}
-unary_ops = {
-    "+": ast.UnaryAdd,
-    "-": ast.UnarySub,
-}
-precedence = (
-    ("left", "EQ", "GT", "LT"),
-    ("left", "PLUS", "MINUS"),
-    ("left", "MUL", "DIV"),
-)
-
-
-
-
 
 
 def p_statement_break_cont(p):
@@ -312,6 +265,7 @@ def p_statement_declaration_assign(p):
 	print "\n let name equals exp, statement called"
 	global count
 	global symbol_table
+	global var_list
 	temp = line_dict[count - 1]
 	print(temp)
 	print("1", p[1])
@@ -319,20 +273,31 @@ def p_statement_declaration_assign(p):
 	print("3", p[3])
 	print("4", p[4])
 	print("type : ", type(p[4]))
+	
 	if(p[2] in symbol_table[temp]):
 		symbol_table[temp][p[2]]['value'] = p[4]
 		symbol_table[temp][p[2]]['type'] = type(p[4])
-		
-	else:
-		print("else called")
-		error_list.append("redefinition of type for variable : " + str(p[2]) + "at line : " + str(count))
-
+	if(p[2] not in var_list):
+		var_list.append(p[2])	
+	p[0] = ['ASSIGN',p[2], p[4]]
+	var_dict[p[2]] = p[0]
 
 def p_statement_dec(p):
 	'statement : NAME EQUALS expression SEMCOL'
 	print("statement redefinition")
 	#CHECK FOR MUT, otherwise error
-	print(p[1])
+	global symbol_table
+	global count
+	global var_list
+	temp = line_dict[count - 1]
+	if(p[1] in symbol_table[temp]):
+		symbol_table[temp][p[1]]['value'] = p[3]
+		symbol_table[temp][p[1]]['type'] = type(p[3])
+	if(p[1] not in var_list):
+		var_list.append(p[1])	
+	p[0] = ['ASSIGN',p[1], p[3]]
+	print(p[0])
+	var_dict[p[1]] = p[0]
 
 
 def p_statement_expr2(p):
@@ -365,28 +330,58 @@ def p_expression_relop(p):
 			   | expression EQ expression
 			   | expression NE expression
 	'''
-	'''
-	if p[2] == 'GT'  : p[0] = p[1] > p[3]
-	elif p[2] == 'GE': p[0] = p[1] >= p[3]
-	elif p[2] == 'EQ': p[0] = p[1] == p[3]
-	elif p[2] == 'LT': p[0] = p[1] < p[3]
-	elif p[2] == 'LE': p[0] = p[1] <= p[3]
-	elif p[2] == 'NE': p[0] = p[1] != p[3]
-	'''
-	p[0] = binary_ops[p[2]]((p[1], p[3]))
+	global temp_no
+	if p[2] == 'GT'  : 
+		p[0] = ['>',p[1], p[3]]
+		temp_no+=1
+		temp_dict["t"+str(temp_no)] = p[0]
+	elif p[2] == 'GE':
+		p[0] = ['>=',p[1], p[3]]
+		temp_no+=1
+		temp_dict["t"+str(temp_no)] = p[0]
+	elif p[2] == 'EQ': 
+		p[0] = ['==',p[1], p[3]]
+		temp_no+=1
+		temp_dict["t"+str(temp_no)] = p[0]	
+	elif p[2] == 'LT': 
+		p[0] = ['<',p[1], p[3]]
+		temp_no+=1
+		temp_dict["t"+str(temp_no)] = p[0]
+	elif p[2] == 'LE': 
+		p[0] = ['<=',p[1], p[3]]
+		temp_no+=1
+		temp_dict["t"+str(temp_no)] = p[0]
+	elif p[2] == 'NE': 
+		p[0] = ['!=',p[1], p[3]]
+		temp_no+=1
+		temp_dict["t"+str(temp_no)] = p[0]
+	p[0]= "t"+str(temp_no)
 
 def p_expression_binop(p):
 	'''expression : expression PLUS expression 
 				  | expression MINUS expression 
-				  | expression MUL expression 
-				  | expression DIV expression'''
-	'''
-	if p[2] == '+'  : p[0] = p[1] + p[3]
-	elif p[2] == '-': p[0] = p[1] - p[3]
-	elif p[2] == '*': p[0] = p[1] * p[3]
-	elif p[2] == '/': p[0] = p[1] / p[3]
-	'''
-	p[0] = binary_ops[p[2]]((p[1], p[3]))
+				  | expression TIMES expression 
+				  | expression DIVIDE expression'''
+	global temp_no			  
+	if p[2] == '+'  : 
+		p[0] = ['+',p[1], p[3]]
+		temp_no+=1
+		temp_dict["t"+str(temp_no)] = p[0]
+	elif p[2] == '-': 
+		p[0] = ['-',p[1], p[3]]
+		temp_no+=1
+		temp_dict["t"+str(temp_no)] = p[0]
+	elif p[2] == '*': 
+		p[0] = ['*',p[1], p[3]]
+		temp_no+=1
+		temp_dict["t"+str(temp_no)] = p[0]
+	elif p[2] == '/': 
+		p[0] = ['/',p[1], p[3]]
+		temp_no+=1
+		temp_dict["t"+str(temp_no)] = p[0]
+	p[0]= "t"+str(temp_no)
+	print p[0]	
+
 
 def p_expression_binop_assign(p):
 	'expression : binop_exp'
@@ -409,11 +404,11 @@ def p_decrement_first(p):
 
 def p_decrement(p):
 	'decrement_exp : DECREMENT NAME'
-	# p[0] = p[2] - 1
+	p[0] = ('--',p[2])
 
 def p_increment(p):
 	'increment_exp : INCREMENT NAME'
-	# p[0] = p[2] + 1
+	p[0] = ('++',p[2])
 
 def p_expression_logop(p):
 	'''expression : expression AND expression 
@@ -423,17 +418,16 @@ def p_expression_logop(p):
 				  | expression BITNOT expression
 				  | NOT expression''' 
 
-	if p[2] == 'AND'  : p[0] = p[1] and p[3]
-	elif p[2] == 'OR': p[0] = p[1] or p[3]
-	elif p[2] == 'BITAND': p[0] = p[1] & p[3]
-	elif p[2] == 'BITOR': p[0] = p[1] | p[3] 
-	elif p[2] == 'BITNOT': p[0] = p[1] ^ p[3]
-	elif p[1] == 'NOT': p[0] = not p[2]
+	if p[2] == 'AND'  : p[0] = ['and',p[1], p[3]]
+	elif p[2] == 'OR': p[0] = ['or',p[1], p[3]]
+	elif p[2] == 'BITAND': p[0] = ['&',p[1], p[3]]
+	elif p[2] == 'BITOR': p[0] = ['|',p[1], p[3]]
+	elif p[2] == 'BITNOT': p[0] = ['^',p[1], p[3]]
+	elif p[1] == 'NOT': p[0] = ['!', p[2]]
 
 def p_expression_uminus(p):
 	'expression : MINUS expression'
-	p[0] = -p[2]
-	p[0] = unary_ops[p[1]](p[2])
+	p[0] = ('-',p[2])
 
 def p_expression_group(p):
 	'expression : LPAREN expression RPAREN'
@@ -442,12 +436,12 @@ def p_expression_group(p):
 def p_expression_number(p):
 	'expression : NUMBER'
 	print "expression=numberr"
-	p[0] = p[1]
+	p[0] = ['NUM',p[1]]
 
 def p_expression_name(p):
 	'expression : NAME'
 	print ("p[1] here is", find_val(p[1]))
-	p[0] = find_val(p[1])
+	p[0] = ['NUM',find_val(p[1])]
 	
 
 def find_val(x):
@@ -465,16 +459,33 @@ import ply.yacc as yacc
 yacc.yacc()
 
 new_data = "" 
-with open("example.rs") as file:
+with open("rust.rs") as file:
 	new_data = file.read()
 i = 0
 s = new_data
 yacc.parse(s)
 print "\n"
 print_symbol_table()
+print "maximum scope =" ,len(symbol_table)
+print var_list
 
 
-ast.parse()
+print "##### INTERMEDIATE CODE ######"
+#for i in var_list:
 
+keylist=temp_dict.keys()
+keylist.sort()
+for key in keylist:
+	if(temp_dict[key][1][0]=='NUM'):
+		print key, "=", temp_dict[key][1][1],"",temp_dict[key][0],"",temp_dict[key][2][1]  
+	else:
+		print key, "=", temp_dict[key][1],"",temp_dict[key][0],"",temp_dict[key][2][1]
+print temp_dict
 
-
+keylist=var_dict.keys()
+keylist.sort()
+for key in keylist:
+	if(isinstance( var_dict[key][2], list) ):
+		print key, "=", var_dict[key][2][1]
+	else:
+		print key, 	"=", var_dict[key][2]
