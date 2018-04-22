@@ -1,3 +1,12 @@
+'''
+-> Constant fold/propagate at grammar itself
+-> Add functionality for float, char
+-> Dead code elim, after ICG. 
+-> 
+
+'''
+
+
 import ply.lex as lex
 import ply.yacc as yacc
 import re
@@ -7,7 +16,7 @@ temp_no = 0
 var_list=[]
 temp_dict=dict()
 var_dict = dict()
-
+tac = []
 keywords = [ "break", "else", "char",  "return",  "const", "continue", "void",  "if", "static", "while"]
 local_names = {}
 error_list = []
@@ -225,34 +234,34 @@ precedence = (
 
 def p_main_dec(p):
 	'statement : MAIN'
-	print("Main parsed!")
+	#print("Main parsed!")
 
 def p_print_stat(p):
 	'statement : PRINT LPAREN STR RPAREN SEMCOL'
-	print "PRINT statement parsed!"	
+	#print "PRINT statement parsed!"	
 	
 
 def p_if_statement(p):
 	'statement : KEYWORD expression statement'
 	if(p[1] != 'if'):
 		error_list.append("invalid keyword : " + str(p[1]) + "at line : " + str(count))	
-	else:
-		print "Parsed a simple if"
+	#else:
+		#print "Parsed a simple if"
 
 def p_if_else_statement(p):
 	'statement : KEYWORD expression statement KEYWORD statement'
 	if(p[1] != 'if' and p[4]!='else'):
 		error_list.append("invalid keyword : " + str(p[1]) + "at line : " + str(count))	
-	else:
-		print "parsed an if else"
+	#else:
+		#print "parsed an if else"
 
 def p_block_declaration(p):
 	'statement : BLOCKSTART statement BLOCKEND'
-	print("BLOCK END DONE")
+	#print("BLOCK END DONE")
 
 def p_multiple_statement(p):
 	'statement : statement statement'
-	print("multiple statement called")
+	#print("multiple statement called")
 
 
 def p_statement_break_cont(p):
@@ -262,29 +271,38 @@ def p_statement_break_cont(p):
 
 def p_statement_declaration_assign(p):
 	'statement : LET NAME EQUALS expression SEMCOL'
-	print "\n let name equals exp, statement called"
+	#print "\n let name equals exp, statement called"
 	global count
 	global symbol_table
 	global var_list
 	temp = line_dict[count - 1]
-	print(temp)
-	print("1", p[1])
-	print("2", p[2])
-	print("3", p[3])
-	print("4", p[4])
-	print("type : ", type(p[4]))
+	#print(temp)
+	#print("1", p[1])
+	#print("2", p[2])
+	#print("3", p[3])
+	#print("4", p[4])
+	#print("type : ", type(p[4]))
 	
 	if(p[2] in symbol_table[temp]):
 		symbol_table[temp][p[2]]['value'] = p[4]
 		symbol_table[temp][p[2]]['type'] = type(p[4])
 	if(p[2] not in var_list):
 		var_list.append(p[2])	
-	p[0] = ['ASSIGN',p[2], p[4]]
+	
+	print p[0]
+	if(isinstance(p[4], list) ):
+		x= str(p[2])+ " = "+ str(p[4][1])
+		p[0] = ['ASSIGN',p[2], p[4][1]]
+	else:
+		x= str(p[2])+" = "+str(p[4])
+		p[0] = ['ASSIGN',p[2], p[4]]
+	#print x
+	tac.append(x)
 	var_dict[p[2]] = p[0]
 
 def p_statement_dec(p):
 	'statement : NAME EQUALS expression SEMCOL'
-	print("statement redefinition")
+	#print("statement redefinition")
 	#CHECK FOR MUT, otherwise error
 	global symbol_table
 	global count
@@ -295,20 +313,27 @@ def p_statement_dec(p):
 		symbol_table[temp][p[1]]['type'] = type(p[3])
 	if(p[1] not in var_list):
 		var_list.append(p[1])	
-	p[0] = ['ASSIGN',p[1], p[3]]
+	
 	print(p[0])
+	if(isinstance(p[3], list) ):
+		x= str(p[1])+ " = "+ str( p[3][1])
+		p[0] = ['ASSIGN',p[1], p[3][1]]
+	else:
+		x= str(p[1])+ " = "+str( p[3])
+		p[0] = ['ASSIGN',p[1], p[3]]
+	tac.append(x)	
 	var_dict[p[1]] = p[0]
 
 
 def p_statement_expr2(p):
 	'statement : expression SEMCOL'
-	print("statement expression2")
-	print(p[1])
+	#print("statement expression2")
+	#print(p[1])
 
 def p_statement_expr(p):
 	'statement : expression'
-	print "statement expression "
-	print(p[1])
+	#print "statement expression "
+	#print(p[1])
 
 def p_while_exp(p):
 	'while_expression : expression'
@@ -356,6 +381,7 @@ def p_expression_relop(p):
 		temp_no+=1
 		temp_dict["t"+str(temp_no)] = p[0]
 	p[0]= "t"+str(temp_no)
+	#print( p[0], p[1], p[2], p[3] )
 
 def p_expression_binop(p):
 	'''expression : expression PLUS expression 
@@ -380,7 +406,14 @@ def p_expression_binop(p):
 		temp_no+=1
 		temp_dict["t"+str(temp_no)] = p[0]
 	p[0]= "t"+str(temp_no)
-	print p[0]	
+	if(temp_dict[p[0]][1][0]=='NUM'):
+		x= str(p[0])+ " = "+ str( temp_dict[p[0]][1][1]) + " " + str(temp_dict[p[0]][0]) + " " + str(temp_dict[p[0]][2][1])
+	else:
+		x= str(p[0]) +  " = " + str(temp_dict[p[0]][1]) + " " + str(temp_dict[p[0]][0]) + " " + str(temp_dict[p[0]][2][1])
+	#print p[0]
+	#print x
+	#print( p[0], p[1], p[2], p[3] )
+	tac.append(x)	
 
 
 def p_expression_binop_assign(p):
@@ -435,13 +468,14 @@ def p_expression_group(p):
 
 def p_expression_number(p):
 	'expression : NUMBER'
-	print "expression=numberr"
+	#print "expression=numberr"
+	print "p[1]=", p[1]
 	p[0] = ['NUM',p[1]]
 
 def p_expression_name(p):
 	'expression : NAME'
-	print ("p[1] here is", find_val(p[1]))
-	p[0] = ['NUM',find_val(p[1])]
+	#print ("p[1] here is", find_val(p[1]))
+	p[0] = p[1]
 	
 
 def find_val(x):
@@ -463,16 +497,18 @@ with open("rust.rs") as file:
 	new_data = file.read()
 i = 0
 s = new_data
+#print "\n\n\n\n##### INTERMEDIATE CODE- Three address ######\n"
 yacc.parse(s)
 print "\n"
 print_symbol_table()
-print "maximum scope =" ,len(symbol_table)
-print var_list
+#print "maximum scope =" ,len(symbol_table)
+#print temp_dict
 
 
-print "##### INTERMEDIATE CODE ######"
+print "\n##### INTERMEDIATE CODE- THREE ADDRESS ######\n"
 #for i in var_list:
 
+'''
 keylist=temp_dict.keys()
 keylist.sort()
 for key in keylist:
@@ -489,3 +525,71 @@ for key in keylist:
 		print key, "=", var_dict[key][2][1]
 	else:
 		print key, 	"=", var_dict[key][2]
+'''		
+
+for i in tac:
+	print i
+
+print"\n##### AFTER CONSTANT FOLDING/PROPAGATION #####\n"
+
+tac2=[]
+var_ord_dict={}
+
+for i in tac:
+	#print i
+	e= i.split()
+	#print e
+	if(len(e)==5):
+		if(e[2] in temp_dict.keys()):
+			tac2.append(i)
+			continue	
+		if(e[2] in var_ord_dict.keys()):
+			f= var_ord_dict[e[2]]
+			#print f
+			if(str(f).startswith("t")):
+				tac2.append(i)
+				continue
+			else:
+				e[2]=f
+			
+		a=int(e[2])
+		b=int(e[4])
+		if(e[3]=='+'):
+			tac2.append( str(e[0])+ " " + e[1]+ " " + str(a+b))
+			var_ord_dict[e[0]]=str(a+b)
+		if(e[3]=='-'):
+			tac2.append( str(e[0])+ " " + e[1]+ " " + str(a-b))
+			var_ord_dict[e[0]]=str(a-b)
+		if(e[3]=='*'):
+			tac2.append( str(e[0])+ " " + e[1]+ " " + str(a*b))
+			var_ord_dict[e[0]]=str(a*b)
+		if(e[3]=='/'):
+			tac2.append( str(e[0])+ " " + e[1]+ " " + str(a/b))
+			var_ord_dict[e[0]]=str(a/b)			
+	else:
+		tac2.append(i)
+		var_ord_dict[e[0]]=e[2]
+
+for i in tac2:
+	print i	
+
+tac3=[]
+
+#print var_ord_dict
+
+for i in tac2:
+	e= i.split()
+	if (len(e)==3):
+		#print e[0],e[2]
+		if( e[0] in var_ord_dict.keys() ):
+			
+			if( ( e[2] == var_ord_dict[e[0]])):
+				#print "yes to ", e[0],e[2]
+				tac3.append(i)
+	else:
+		tac3.append(i)	
+
+print ("\n##### DEAD CODE ELIMINATION #####\n")
+
+for i in tac3:
+	print i				
